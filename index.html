@@ -1,0 +1,564 @@
+<!doctype html>
+<!--
+  ==========================================================================
+  Vitae — Resume / CV Builder
+  --------------------------------------------------------------------------
+  Open this file directly in a browser. No build step or server needed.
+  Styling lives in assets/css/style.css, behaviour in assets/js/app.js.
+
+  LAYOUT MAP
+    0. sprite     — shared SVG icons (referenced with <use href="#i-NAME">)
+    1. topbar     — brand, help button, theme button
+    2. toolbar    — Edit/Preview tabs (phones), save status, data menu, PDF button
+    3. workspace  — editor form (left) + live A4/Letter preview (right)
+         the form's list sections (experience, education…) are filled by app.js
+    4. overlays   — help, confirm and PDF-tip dialogs, toast, screen-reader announcer
+  ==========================================================================
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Vitae — Resume Builder</title>
+    <meta
+      name="description"
+      content="Fill in your details, pick a design and save a clean, ATS-friendly resume as PDF. Runs entirely in your browser."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#101317" media="(prefers-color-scheme: dark)" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='2' width='22' height='28' rx='3' fill='%23ffffff' stroke='%230a7a52' stroke-width='2'/%3E%3Cpath d='M10 10h12M10 15h12M10 20h8' stroke='%230a7a52' stroke-width='2'/%3E%3C/svg%3E"
+    />
+
+    <!-- Apply the saved theme before first paint so the page never flashes the wrong colors. -->
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem('vitae-theme');
+          if (theme === 'light' || theme === 'dark')
+            document.documentElement.setAttribute('data-theme', theme);
+        } catch (error) {
+          // Storage is blocked (private mode / strict settings): the system theme is used instead.
+        }
+      })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:wght@400;600;700&display=swap"
+    />
+    <link rel="stylesheet" href="assets/css/style.css" />
+    <!-- @page size/margins for printing. Written by app.js (section 12) to match the paper setting. -->
+    <style id="pageStyle"></style>
+  </head>
+  <body>
+    <!--
+      ICON SPRITE — every icon is drawn once here and reused with
+      <svg class="icon"><use href="#i-NAME"/></svg>. Stroke style comes from .icon in style.css.
+    -->
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-help" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+        <path d="M12 17h.01" />
+      </symbol>
+      <symbol id="i-theme-auto" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />
+      </symbol>
+      <symbol id="i-theme-light" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4" />
+        <path
+          d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
+        />
+      </symbol>
+      <symbol id="i-theme-dark" viewBox="0 0 24 24">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+      <symbol id="i-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6" /></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24">
+        <path d="M3 6h18" />
+        <path d="M8 6V4h8v2" />
+        <path d="M19 6l-1 14H6L5 6" />
+      </symbol>
+      <symbol id="i-pdf" viewBox="0 0 24 24">
+        <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+        <path d="M14 3v6h6" />
+        <path d="M12 12v6M9 15l3 3 3-3" />
+      </symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24">
+        <path d="M12 21V9" />
+        <path d="m7 14 5-5 5 5" />
+        <path d="M5 3h14" />
+      </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24">
+        <path d="M12 3v12" />
+        <path d="m7 10 5 5 5-5" />
+        <path d="M5 21h14" />
+      </symbol>
+      <symbol id="i-sparkles" viewBox="0 0 24 24">
+        <path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z" />
+        <path d="M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z" />
+      </symbol>
+      <symbol id="i-clear" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="m15 9-6 6M9 9l6 6" />
+      </symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24">
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+      </symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24">
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+        <circle cx="12" cy="12" r="3" />
+      </symbol>
+    </svg>
+
+    <a class="skip-link" href="#resumeForm">Skip to the form</a>
+    <noscript
+      ><p class="noscript">
+        Vitae needs JavaScript to build your resume. Please enable it and reload.
+      </p></noscript
+    >
+
+    <!-- ===================== 1. TOP BAR ===================== -->
+    <header class="topbar">
+      <span class="brand"
+        ><span class="brand-prompt" aria-hidden="true">&gt;</span> vitae<span
+          class="brand-caret"
+          aria-hidden="true"
+        ></span
+      ></span>
+      <span class="brand-tag">resume builder</span>
+
+      <div class="topbar-actions">
+        <button id="helpBtn" class="icon-btn" type="button" aria-label="Help" title="Help (?)">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-help" /></svg>
+        </button>
+        <!-- Icon and label are set by app.js (section 17) to match the current theme. -->
+        <button id="themeBtn" class="icon-btn" type="button" aria-label="Theme"></button>
+      </div>
+    </header>
+
+    <!-- ===================== 2. TOOLBAR ===================== -->
+    <div class="toolbar">
+      <!-- Phones only: switch between the form and the preview (WAI-ARIA tabs). -->
+      <div class="tabs" role="tablist" aria-label="View">
+        <button
+          id="tabEdit"
+          class="tab"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="editorPanel"
+        >
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-edit" /></svg> edit
+        </button>
+        <button
+          id="tabPreview"
+          class="tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="previewPanel"
+          tabindex="-1"
+        >
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-eye" /></svg> preview
+        </button>
+      </div>
+
+      <span id="saveStatus" class="save-status">not saved yet</span>
+
+      <div class="toolbar-end">
+        <!-- Data menu: disclosure pattern (button + list), closed with Esc or an outside click. -->
+        <div class="menu">
+          <button id="dataBtn" class="btn" type="button" aria-expanded="false" aria-controls="dataMenu">
+            data
+            <svg class="icon icon--small" aria-hidden="true" focusable="false"><use href="#i-down" /></svg>
+          </button>
+          <div id="dataMenu" class="menu-list" hidden>
+            <button id="sampleBtn" class="menu-item" type="button">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-sparkles" /></svg> load
+              example
+            </button>
+            <button id="importBtn" class="menu-item" type="button">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-upload" /></svg> import
+              .json
+            </button>
+            <button id="exportBtn" class="menu-item" type="button">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download" /></svg> export
+              .json
+            </button>
+            <button id="clearBtn" class="menu-item menu-item--danger" type="button">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-clear" /></svg> clear all
+            </button>
+          </div>
+          <input id="importInput" type="file" accept=".json,application/json" hidden />
+        </div>
+
+        <button id="pdfBtn" class="btn btn-primary" type="button" title="Save as PDF (Ctrl/⌘ P)">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-pdf" /></svg>
+          save PDF
+        </button>
+      </div>
+    </div>
+
+    <!-- ===================== 3. WORKSPACE ===================== -->
+    <main class="workspace">
+      <h1 class="sr-only">Resume builder</h1>
+
+      <!-- ---------- Editor ---------- -->
+      <section id="editorPanel" class="panel panel--editor" role="tabpanel" aria-labelledby="tabEdit">
+        <!--
+          A <div>, not a <form>: nothing is submitted — every change is applied live.
+          Every input carries a data attribute that says where its value lives:
+            data-design="…"   → resume.design      (template, paper, accent)
+            data-profile="…"  → resume.profile     (name, contacts, summary, skills)
+          List entries (experience, education…) are created by app.js from LIST_SECTIONS.
+        -->
+        <div id="resumeForm" class="editor" tabindex="-1">
+          <!-- 01 Design -->
+          <section class="form-section" aria-labelledby="h-design">
+            <h2 id="h-design" class="form-heading"><span class="form-num">01</span> design</h2>
+            <div class="field-grid">
+              <label class="field">
+                <span class="field-label">template</span>
+                <select data-design="template">
+                  <option value="modern">modern</option>
+                  <option value="classic">classic</option>
+                  <option value="compact">compact</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-label">paper</span>
+                <select data-design="paper">
+                  <option value="a4">A4 (210 × 297 mm)</option>
+                  <option value="letter">US Letter (8.5 × 11 in)</option>
+                </select>
+              </label>
+            </div>
+            <!-- Radios are created by app.js from ACCENTS (all pass WCAG AA on white). -->
+            <fieldset class="accent-picker">
+              <legend class="field-label">accent color</legend>
+              <div id="accentOptions" class="accent-options"></div>
+            </fieldset>
+          </section>
+
+          <!-- 02 Personal -->
+          <section class="form-section" aria-labelledby="h-personal">
+            <h2 id="h-personal" class="form-heading"><span class="form-num">02</span> personal</h2>
+            <div class="field-grid">
+              <label class="field field--full">
+                <span class="field-label">full name</span>
+                <input data-profile="fullName" type="text" autocomplete="name" placeholder="Alex Rivera" />
+              </label>
+              <label class="field field--full">
+                <span class="field-label">headline</span>
+                <input data-profile="headline" type="text" placeholder="Frontend Developer" />
+              </label>
+              <label class="field">
+                <span class="field-label">email</span>
+                <input
+                  data-profile="email"
+                  type="email"
+                  autocomplete="email"
+                  placeholder="alex@example.com"
+                />
+              </label>
+              <label class="field">
+                <span class="field-label">phone</span>
+                <input data-profile="phone" type="tel" autocomplete="tel" placeholder="+63 900 000 0000" />
+              </label>
+              <label class="field">
+                <span class="field-label">location</span>
+                <input
+                  data-profile="location"
+                  type="text"
+                  autocomplete="address-level2"
+                  placeholder="Manila, Philippines"
+                />
+              </label>
+              <label class="field">
+                <span class="field-label">website</span>
+                <input data-profile="website" type="url" autocomplete="url" placeholder="alexrivera.dev" />
+              </label>
+              <label class="field field--full">
+                <span class="field-label">linkedin</span>
+                <input data-profile="linkedin" type="url" placeholder="linkedin.com/in/alexrivera" />
+              </label>
+            </div>
+          </section>
+
+          <!-- 03 Summary -->
+          <section class="form-section" aria-labelledby="h-summary">
+            <h2 id="h-summary" class="form-heading"><span class="form-num">03</span> summary</h2>
+            <label class="field field--full">
+              <span class="field-label">professional summary</span>
+              <textarea
+                data-profile="summary"
+                rows="4"
+                aria-describedby="summaryHint"
+                placeholder="2–3 sentences: who you are, your strongest skills, and what you're looking for."
+              ></textarea>
+            </label>
+            <p id="summaryHint" class="field-hint">Keep it short. Recruiters skim this in seconds.</p>
+          </section>
+
+          <!-- 04–06 List sections: entries are rendered by app.js (section 08). -->
+          <section class="form-section" aria-labelledby="h-experience">
+            <h2 id="h-experience" class="form-heading"><span class="form-num">04</span> experience</h2>
+            <div class="entry-list" data-list="experience"></div>
+            <button class="btn btn-add" type="button" data-add="experience">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus" /></svg> add job
+            </button>
+          </section>
+
+          <section class="form-section" aria-labelledby="h-projects">
+            <h2 id="h-projects" class="form-heading"><span class="form-num">05</span> projects</h2>
+            <div class="entry-list" data-list="projects"></div>
+            <button class="btn btn-add" type="button" data-add="projects">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus" /></svg> add project
+            </button>
+          </section>
+
+          <section class="form-section" aria-labelledby="h-education">
+            <h2 id="h-education" class="form-heading"><span class="form-num">06</span> education</h2>
+            <div class="entry-list" data-list="education"></div>
+            <button class="btn btn-add" type="button" data-add="education">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus" /></svg> add school
+            </button>
+          </section>
+
+          <!-- 07 Skills -->
+          <section class="form-section" aria-labelledby="h-skills">
+            <h2 id="h-skills" class="form-heading"><span class="form-num">07</span> skills</h2>
+            <label class="field field--full">
+              <span class="field-label">skills</span>
+              <textarea
+                data-profile="skills"
+                rows="4"
+                aria-describedby="skillsHint"
+                placeholder="Languages: JavaScript, Python, SQL&#10;Tools: Git, Figma"
+              ></textarea>
+            </label>
+            <p id="skillsHint" class="field-hint">
+              One group per line. Write <code>Group: skill, skill</code> to get a bold label.
+            </p>
+          </section>
+
+          <!-- 08 Certifications -->
+          <section class="form-section" aria-labelledby="h-certifications">
+            <h2 id="h-certifications" class="form-heading">
+              <span class="form-num">08</span> certifications
+            </h2>
+            <div class="entry-list" data-list="certifications"></div>
+            <button class="btn btn-add" type="button" data-add="certifications">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus" /></svg> add
+              certification
+            </button>
+          </section>
+        </div>
+      </section>
+
+      <!-- ---------- Preview ---------- -->
+      <section
+        id="previewPanel"
+        class="panel panel--preview is-hidden"
+        role="tabpanel"
+        aria-labelledby="tabPreview"
+      >
+        <div class="preview-bar">
+          <span class="preview-label">~/preview</span>
+          <output id="pageCount" class="page-count">1 page</output>
+        </div>
+        <div id="previewStage" class="preview-stage">
+          <div id="pageScaler" class="page-scaler">
+            <!-- The resume itself. Rebuilt by app.js (section 10) on every change. -->
+            <article id="resume" class="resume" aria-label="Resume preview"></article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ===================== 4. OVERLAYS ===================== -->
+
+    <!-- Confirm before replacing or clearing data. app.js (section 14) sets the text. -->
+    <dialog
+      id="confirmDialog"
+      class="dialog dialog--small"
+      aria-labelledby="confirmTitle"
+      aria-describedby="confirmMessage"
+    >
+      <form method="dialog">
+        <div class="dialog-body">
+          <h2 id="confirmTitle" class="confirm-title">Are you sure?</h2>
+          <p id="confirmMessage" class="confirm-message"></p>
+        </div>
+        <div class="dialog-foot">
+          <button class="btn" type="submit" value="cancel">cancel</button>
+          <button id="confirmOkBtn" class="btn btn-danger" type="submit" value="confirm">confirm</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- PDF tips, shown before the print window opens (until "don't show again"). -->
+    <dialog id="pdfDialog" class="dialog" aria-labelledby="pdfTitle">
+      <div class="dialog-bar">
+        <span class="dialog-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="dialog-title dialog-path" aria-hidden="true">~/vitae/save-pdf.md</span>
+        <button class="icon-btn dialog-close" type="button" data-close aria-label="Close">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close" /></svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <h2 id="pdfTitle" class="help-title">Save your resume as PDF</h2>
+        <p class="help-lead">Your browser's print window makes the PDF. Set it up like this:</p>
+        <ol class="help-steps">
+          <li><b>Destination</b> (or Printer): choose <b>Save as PDF</b>.</li>
+          <li><b>Paper size</b>: <b id="pdfPaperName">A4</b>, to match your design.</li>
+          <li><b>Headers and footers</b>: turn <b>off</b> (under "More settings").</li>
+          <li><b>Background graphics</b>: turn <b>on</b> to keep the accent colors.</li>
+          <li>Click <b>Save</b>.</li>
+        </ol>
+        <p class="help-note">
+          On iPhone or iPad: tap <b>Share → Print</b>, then pinch out on the preview and share it as a PDF.
+        </p>
+        <label class="check">
+          <input id="pdfTipSkip" class="check-input" type="checkbox" />
+          <span>Don't show this again</span>
+        </label>
+      </div>
+      <div class="dialog-foot">
+        <button class="btn" type="button" data-close>cancel</button>
+        <button id="pdfContinueBtn" class="btn btn-primary" type="button">open print window</button>
+      </div>
+      <p class="sr-only dialog-status" role="status" aria-live="polite"></p>
+    </dialog>
+
+    <!-- Help guide. Plain HTML: edit the text directly (see README → "Edit the help guide"). -->
+    <dialog id="helpDialog" class="dialog dialog--wide" aria-labelledby="helpTitle">
+      <div class="dialog-bar">
+        <span class="dialog-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="dialog-title dialog-path" aria-hidden="true">~/vitae/help.md</span>
+        <button class="icon-btn dialog-close" type="button" data-close aria-label="Close help">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close" /></svg>
+        </button>
+      </div>
+      <div class="dialog-body help">
+        <p class="help-kicker"># readme</p>
+        <h2 id="helpTitle" class="help-title">What is Vitae?</h2>
+        <p class="help-lead">
+          Vitae builds a clean, professional resume (CV). Fill in your details, pick a design, and save it as
+          a PDF that's ready to send. Everything stays in your browser: nothing is uploaded.
+        </p>
+
+        <section class="help-section">
+          <h3 class="help-heading"><span class="help-num">01</span> Quick start</h3>
+          <ol class="help-steps">
+            <li>Not sure where to begin? Open <b>data → load example</b> to see a finished resume.</li>
+            <li>Fill in the form from top to bottom. The preview updates as you type.</li>
+            <li>
+              Use <b>add job</b>, <b>add project</b>, and the others to add entries. Use the arrows to reorder
+              them.
+            </li>
+            <li>Choose a <b>template</b>, <b>paper size</b> and <b>accent color</b> in <b>01 design</b>.</li>
+            <li>Click <b>save PDF</b>, then choose <b>Save as PDF</b> in the print window.</li>
+          </ol>
+          <p class="help-note">
+            On a phone, switch between <b>edit</b> and <b>preview</b> with the tabs at the top.
+          </p>
+        </section>
+
+        <section class="help-section">
+          <h3 class="help-heading"><span class="help-num">02</span> Writing tips</h3>
+          <ul class="help-list">
+            <li>
+              <b>One page</b> is best for under 10 years of experience. The page counter in the preview helps.
+            </li>
+            <li>Start each highlight with an action verb: <i>built, led, reduced, improved</i>.</li>
+            <li>Add numbers wherever you can: <i>cut load time by 48%</i>, <i>managed 5 people</i>.</li>
+            <li>Put your most recent job first.</li>
+            <li>The PDF holds real text, not a picture, so applicant tracking systems (ATS) can read it.</li>
+          </ul>
+        </section>
+
+        <section class="help-section">
+          <h3 class="help-heading"><span class="help-num">03</span> Fields</h3>
+          <dl class="help-defs">
+            <div>
+              <dt>Highlights / details</dt>
+              <dd>Each line becomes one bullet point.</dd>
+            </div>
+            <div>
+              <dt>Start / end</dt>
+              <dd>
+                Free text, such as <i>Jan 2022</i> or <i>2019</i>. Tick "currently" to show <i>Present</i>.
+              </dd>
+            </div>
+            <div>
+              <dt>Skills</dt>
+              <dd>One group per line. <code>Tools: Git, Figma</code> shows "Tools" in bold.</dd>
+            </div>
+            <div>
+              <dt>Empty fields</dt>
+              <dd>Empty fields and sections are left out of the resume automatically.</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="help-section">
+          <h3 class="help-heading"><span class="help-num">04</span> Your data</h3>
+          <ul class="help-list">
+            <li>
+              Your resume is <b>saved automatically</b> in this browser. The status next to the tabs shows
+              when.
+            </li>
+            <li>
+              Use <b>data → export .json</b> to make a backup or move your resume to another device, and
+              <b>import .json</b> to load it back.
+            </li>
+            <li>Clearing your browser data deletes the saved resume, so keep a backup.</li>
+            <li>Nothing is uploaded. Vitae works offline once the page has loaded.</li>
+          </ul>
+        </section>
+
+        <section class="help-section">
+          <h3 class="help-heading"><span class="help-num">05</span> Keyboard shortcuts</h3>
+          <dl class="help-defs">
+            <div>
+              <dt><kbd>Ctrl/⌘</kbd> <kbd>P</kbd></dt>
+              <dd>Save as PDF (print window)</dd>
+            </div>
+            <div>
+              <dt><kbd>?</kbd></dt>
+              <dd>This guide (when you're not typing in a field)</dd>
+            </div>
+            <div>
+              <dt><kbd>Esc</kbd></dt>
+              <dd>Close a window or menu</dd>
+            </div>
+          </dl>
+        </section>
+      </div>
+      <div class="dialog-foot">
+        <span class="dialog-hint">press <kbd>Esc</kbd> to close</span>
+        <button class="btn btn-primary" type="button" data-close>got it</button>
+      </div>
+      <p class="sr-only dialog-status" role="status" aria-live="polite"></p>
+    </dialog>
+
+    <!-- Short confirmation message. Shown by app.js (section 16). -->
+    <div id="toast" class="toast" hidden></div>
+    <!-- Screen-reader announcements. -->
+    <p id="announcer" class="sr-only" role="status" aria-live="polite"></p>
+
+    <script src="assets/js/app.js"></script>
+  </body>
+</html>
