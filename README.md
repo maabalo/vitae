@@ -28,7 +28,7 @@ Each file starts with a **table of contents**. Section numbers in comments (for 
 
 ## Features
 
-- **Live preview.** The real page (A4 or US Letter) is scaled to fit the screen and updates as you type. A page counter and dashed lines show where new pages start.
+- **Live preview.** The real page (A4 or US Letter) is scaled to fit the screen and updates as you type. Use **zoom 100%** on phones to read it at full size. The page counter and dashed page lines copy how the browser splits pages: an entry is never split, and a heading stays with its first item. In tests they matched real PDFs.
 - **Three templates.**
   - `modern`: accent-colored name and headings with lines
   - `classic`: serif type and a centered header
@@ -129,7 +129,7 @@ npm run format       # auto-format every file with Prettier
   - Links are built only as `mailto:`, `tel:` or `http(s):`, so `javascript:` URLs are refused.
   - Saved and imported data is validated and size-limited by `normalizeResume()`.
 - **Privacy.** No uploads, analytics or third-party scripts. The only outside request is for Google Fonts.
-- **Responsive and mobile-first.** Phones get tabs to switch between editing and the preview. Tablets get two-column fields (600px and up). Desktops get a side-by-side editor and preview (1000px and up).
+- **Responsive and mobile-first.** Phones get tabs to switch between editing and the preview. Long entry titles are shortened with "…" instead of widening the page. Tablets get two-column fields (600px and up). Desktops get a side-by-side editor and preview (1000px and up).
 - **Robustness.** Storage, download, import and print failures are shown to the user and logged with a `Vitae:` prefix. Damaged saved data is ignored safely.
 - **Code style.**
   - The code uses `'use strict'`, and every function has a JSDoc comment and is no longer than 25 lines.
