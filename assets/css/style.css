@@ -41,6 +41,7 @@
   --border: #dde2e7;
   --border-strong: #c9d0d7;
   --stage: #e3e7eb; /* backdrop behind the paper */
+  --dot-outline: rgb(0 0 0 / 18%); /* edge of accent dots — keeps dark colors visible */
 
   /* Text */
   --text: #0e1116;
@@ -83,6 +84,7 @@
   --border: #242a31;
   --border-strong: #323a43;
   --stage: #07080a;
+  --dot-outline: rgb(255 255 255 / 35%);
   --text: #e6edf3;
   --muted: #a3adb8;
   --faint: #8b95a1;
@@ -107,6 +109,7 @@
     --border: #242a31;
     --border-strong: #323a43;
     --stage: #07080a;
+    --dot-outline: rgb(255 255 255 / 35%);
     --text: #e6edf3;
     --muted: #a3adb8;
     --faint: #8b95a1;
@@ -528,6 +531,16 @@ code {
   display: none;
 }
 
+/* Laid out invisibly off-screen for one measurement while the phone tabs hide it (app.js section 11) */
+.panel.is-measuring {
+  position: absolute;
+  top: 0;
+  left: -10000px;
+  display: flex !important;
+  width: 100vw;
+  visibility: hidden;
+}
+
 .panel--preview {
   display: flex;
   flex: 1;
@@ -538,8 +551,12 @@ code {
 /* ==========================================================================
    08  FORM: SECTIONS & FIELDS
    ========================================================================== */
+
+/* minmax(0, 1fr): columns may shrink below their content, so a long
+   one-line entry title gets "…" instead of making the form wider than the phone */
 .editor {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 16px var(--gutter) 40px;
 }
@@ -550,6 +567,8 @@ code {
 
 .form-section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--border);
@@ -571,6 +590,7 @@ code {
 
 .field-grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -705,7 +725,7 @@ code {
   height: 26px;
   border-radius: 50%;
   background: var(--swatch);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 15%);
+  box-shadow: inset 0 0 0 1px var(--dot-outline);
   transition: transform 0.15s;
 }
 
@@ -716,7 +736,7 @@ code {
 .accent-input:checked + .accent-swatch {
   box-shadow:
     0 0 0 2px var(--surface),
-    0 0 0 4px var(--swatch);
+    0 0 0 4px var(--text); /* same ring for every color, so dark ones show it too */
 }
 
 .accent-input:focus-visible + .accent-swatch {
@@ -730,6 +750,7 @@ code {
    ========================================================================== */
 .entry-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -774,6 +795,7 @@ code {
 }
 
 .entry-title {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -785,6 +807,7 @@ code {
 
 .entry-body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 4px 12px 14px;
 }
@@ -842,6 +865,23 @@ code {
 
 .preview-label {
   color: var(--faint);
+}
+
+.preview-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.btn-small[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .page-count {
@@ -909,6 +949,11 @@ code {
   print-color-adjust: exact;
 }
 
+/* Focused only by script (after "load example"); it isn't interactive itself */
+.resume:focus {
+  outline: none;
+}
+
 .resume a {
   color: inherit;
   text-decoration: none;
@@ -939,12 +984,29 @@ code {
 .r-contact {
   display: flex;
   flex-wrap: wrap;
-  gap: 2pt 12pt;
+  gap: 2pt 14pt; /* the 14pt column gap is where each "·" sits */
   margin-top: 6pt;
   padding: 0;
   color: var(--ink-soft);
   font-size: 9pt;
   list-style: none;
+}
+
+/* Decorative "·" between contact items (hidden from screen readers).
+   It sits in the 14pt gap before its item with ZERO net width (14pt wide,
+   pulled back 14pt), so showing or hiding it can never change where the line
+   wraps. It stays in normal flow (no absolute positioning) so the PDF draws
+   the contact line in reading order, right after the name, for ATS parsers. */
+.r-sep {
+  display: inline-block;
+  width: 14pt;
+  margin-left: -14pt;
+  color: #9a9a9a;
+  text-align: center;
+}
+
+.r-contact > .is-line-start > .r-sep {
+  visibility: hidden;
 }
 
 /* Sections */
@@ -1011,6 +1073,7 @@ code {
 
 .r-bullets li::marker {
   color: var(--ink-soft);
+  font-family: var(--font-sans); /* the serif font's bullet looks clipped in PDFs */
 }
 
 /* Skills */
@@ -1107,7 +1170,7 @@ code {
 
 .resume--compact .r-section {
   display: grid;
-  grid-template-columns: 30mm 1fr;
+  grid-template-columns: 34mm minmax(0, 1fr);
   gap: 10pt;
   margin-top: 10pt;
 }
@@ -1115,6 +1178,8 @@ code {
 .resume--compact .r-heading {
   margin: 1pt 0 0;
   font-size: 8.5pt;
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere; /* long custom headings wrap instead of overflowing */
 }
 
 .resume--compact .r-entry + .r-entry {
@@ -1373,7 +1438,7 @@ code {
   }
 
   .field-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .field--full {
