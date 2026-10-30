@@ -240,6 +240,7 @@
     pageScaler: byId('pageScaler'),
     resume: byId('resume'),
     pageCount: byId('pageCount'),
+    zoomBtn: byId('zoomBtn'),
     pageStyle: byId('pageStyle'),
     // Dialogs
     confirmDialog: byId('confirmDialog'),
@@ -579,6 +580,7 @@
     saveTimer: 0,
     previewFrame: 0,
     saveErrorShown: false,
+    zoomFull: false, // phone preview at 100% instead of fit-to-screen
     theme: 'auto',
   };
 
@@ -622,6 +624,26 @@
       state.saveErrorShown = true;
       showToast('Autosave is blocked in this browser — use data → export .json to keep a copy');
     }
+  }
+
+  /**
+   * Another Vitae tab saved the resume. Ask before mixing versions, so one tab
+   * doesn't silently overwrite the other's work.
+   */
+  async function handleStorageChange(event) {
+    if (event.key !== STORAGE_KEYS.resume || event.newValue === null) return;
+    if (event.newValue === JSON.stringify(serializeResume(state.resume))) return;
+    if (document.querySelector('dialog[open]')) {
+      showToast('Your resume was changed in another tab — reload to see it');
+      return;
+    }
+    const ok = await confirmAction({
+      title: 'Changed in another tab',
+      message:
+        "Your resume was edited in another Vitae tab. Load that version here? If you keep this one, your next change here replaces the other tab's version.",
+      confirmLabel: 'load other version',
+    });
+    if (ok) setResume(loadResume());
   }
 
   /** Leaving the page with a save still pending: write it now. */
@@ -856,9 +878,13 @@
   /** Clicks inside the form: add buttons, entry tools and undo. */
   function handleFormClick(event) {
     const button = event.target.closest('button');
-    if (!button || button.getAttribute('aria-disabled') === 'true') return;
-    if (button.dataset.add) addEntry(button.dataset.add);
-    else if (button.dataset.entryAction) handleEntryAction(button);
+    if (!button) return;
+    if (button.dataset.add) {
+      addEntry(button.dataset.add); // explains the limit itself when the list is full
+      return;
+    }
+    if (button.getAttribute('aria-disabled') === 'true') return;
+    if (button.dataset.entryAction) handleEntryAction(button);
     else if (button.classList.contains('undo-btn')) undoRemove();
   }
 
@@ -877,7 +903,10 @@
   /** Append a blank, unfolded entry and put the cursor in its first field. */
   function addEntry(sectionKey) {
     const list = state.resume[sectionKey];
-    if (list.length >= MAX_ENTRIES) return;
+    if (list.length >= MAX_ENTRIES) {
+      showToast(`Up to ${MAX_ENTRIES} entries per section — remove one to add another`);
+      return;
+    }
     const entry = normalizeEntry({}, LIST_SECTIONS[sectionKey]);
     list.push(entry);
     state.openEntries.add(entry.id);
@@ -1049,7 +1078,7 @@
     if (profile.headline.trim()) header.appendChild(el('p', 'r-headline', profile.headline));
     if (contacts.length) {
       const list = el('ul', 'r-contact');
-      list.append(...contacts.map(createContactItem));
+      list.append(...contacts.map((contact, index) => createContactItem(contact, index > 0)));
       header.appendChild(list);
     }
     return header;
@@ -1066,11 +1095,19 @@
     ].filter((item) => item.text.trim());
   }
 
-  /** <li> with a link (kept clickable in the PDF) or plain text. */
-  function createContactItem({ text, href }) {
+  /**
+   * <li> with a link (kept clickable in the PDF) or plain text.
+   * A real "·" goes between items so ATS software reads them as separate fields.
+   */
+  function createContactItem({ text, href }, withSeparator) {
     const item = el('li');
+    if (withSeparator) {
+      const separator = el('span', 'r-sep', '·');
+      separator.setAttribute('aria-hidden', 'true');
+      item.appendChild(separator);
+    }
     if (!href) {
-      item.textContent = text;
+      item.append(text);
       return item;
     }
     const link = el('a', '', text);
@@ -1176,40 +1213,118 @@
   /** Fit the paper to the stage and redraw page-break markers. */
   function updatePageLayout() {
     const paper = PAPERS[state.resume.design.paper];
+    // Line wraps and page breaks depend only on the paper (sized in mm), so measure
+    // them even while the phone "edit" tab hides the preview — printing still needs them.
+    withPreviewLaidOut(() => {
+      hideWrappedSeparators();
+      updatePageBreaks(paper);
+    });
+    scalePaper(paper);
+  }
+
+  /**
+   * Run `measure` while the preview has a layout. A hidden (display: none)
+   * element measures as 0, so a hidden preview is laid out invisibly off-screen
+   * for this one synchronous call (no paint happens in between).
+   */
+  function withPreviewLaidOut(measure) {
+    const isHidden = els.previewPanel.offsetParent === null;
+    if (isHidden) els.previewPanel.classList.add('is-measuring');
+    try {
+      measure();
+    } finally {
+      els.previewPanel.classList.remove('is-measuring');
+    }
+  }
+
+  /** Shrink the paper to fit the stage (or show it at 100% when zoomed). */
+  function scalePaper(paper) {
     const pageWidth = paper.width * MM_TO_PX;
     const stageStyle = getComputedStyle(els.previewStage);
     const available =
       els.previewStage.clientWidth - parseFloat(stageStyle.paddingLeft) - parseFloat(stageStyle.paddingRight);
-    if (available <= 0) return; // preview is hidden (phone "edit" tab) — redone when shown
+    if (available <= 0) return; // preview is hidden — scaled again when it's shown
 
-    const scale = Math.min(1, available / pageWidth);
+    const fit = Math.min(1, available / pageWidth);
+    els.zoomBtn.hidden = fit >= 1; // zooming only matters when the paper is shrunk
+    const scale = state.zoomFull && fit < 1 ? 1 : fit;
     const height = els.resume.offsetHeight; // unaffected by the transform
     els.resume.style.transform = `scale(${scale})`;
     els.pageScaler.style.width = `${pageWidth * scale}px`;
     els.pageScaler.style.height = `${height * scale}px`;
-    updatePageBreaks(paper, height);
   }
 
-  /** Approximate number of PDF pages for a paper of this height (px). */
-  function countPages(paper, height) {
-    const marginY = PAGE_MARGIN.y * MM_TO_PX;
+  /**
+   * A "·" that wrapped to the start of a new contact line looks like a stray
+   * bullet. Mark that item so CSS makes its "·" invisible while KEEPING its
+   * width (removing it would change where the line wraps and undo the check).
+   * The paper is sized in mm, so the PDF wraps exactly the same way.
+   */
+  function hideWrappedSeparators() {
+    const items = [...els.resume.querySelectorAll('.r-contact > li')];
+    items.forEach((item) => item.classList.remove('is-line-start'));
+    const tops = items.map((item) => item.offsetTop); // measure all first, then change classes
+    items.forEach((item, index) => {
+      if (index > 0 && tops[index] !== tops[index - 1]) item.classList.add('is-line-start');
+    });
+  }
+
+  /** "zoom 100%" button: real size (scroll sideways) ↔ fit to screen. */
+  function toggleZoom() {
+    state.zoomFull = !state.zoomFull;
+    els.zoomBtn.setAttribute('aria-pressed', String(state.zoomFull));
+    updatePageLayout();
+  }
+
+  /**
+   * Blocks the printer keeps together, with their top/bottom on the paper (px).
+   * An entry never splits (break-inside: avoid), and a section heading stays
+   * with its first item (break-after: avoid), so that item "starts" at the heading.
+   */
+  function printUnits() {
+    const units = els.resume.querySelectorAll('.r-header, .r-entry, .r-summary, .r-skills > li');
+    return [...units].map((unit) => {
+      const section = unit.closest('.r-section');
+      const isFirst = section && section.querySelector('.r-entry, .r-summary, .r-skills > li') === unit;
+      return {
+        top: isFirst ? section.offsetTop : unit.offsetTop,
+        bottom: unit.offsetTop + unit.offsetHeight,
+      };
+    });
+  }
+
+  /**
+   * Walk the blocks like the print engine does: a block that doesn't fit on the
+   * current page moves to the next one (unless it's taller than a whole page).
+   * @returns {number[]} y-positions (px) on the paper where pages 2, 3… begin
+   */
+  function findPageBreaks(paper) {
     const usable = (paper.height - 2 * PAGE_MARGIN.y) * MM_TO_PX;
-    return Math.max(1, Math.ceil((height - 2 * marginY - 1) / usable));
+    const breaks = [];
+    let pageEnd = PAGE_MARGIN.y * MM_TO_PX + usable;
+    printUnits().forEach(({ top, bottom }) => {
+      while (bottom > pageEnd + 0.5) {
+        const canMove = bottom - top <= usable && top > pageEnd - usable;
+        const breakAt = canMove ? top : pageEnd;
+        breaks.push(breakAt);
+        pageEnd = breakAt + usable;
+      }
+    });
+    return breaks;
   }
 
   /** Dashed "page 2" lines on the paper, plus the page counter. */
-  function updatePageBreaks(paper, height) {
+  function updatePageBreaks(paper) {
     els.resume.querySelectorAll('.page-break').forEach((line) => line.remove());
-    const pages = countPages(paper, height);
-    const marginY = PAGE_MARGIN.y * MM_TO_PX;
-    const usable = (paper.height - 2 * PAGE_MARGIN.y) * MM_TO_PX;
-    for (let page = 1; page < pages; page += 1) {
+    const breaks = findPageBreaks(paper);
+    const pages = breaks.length + 1;
+    breaks.forEach((y, index) => {
       const line = el('div', 'page-break');
       line.setAttribute('aria-hidden', 'true');
-      line.dataset.label = `page ${page + 1} ≈`;
-      line.style.top = `${marginY + page * usable}px`;
+      line.dataset.label = `page ${index + 2}`;
+      line.style.top = `${y}px`;
       els.resume.appendChild(line);
-    }
+    });
     els.pageCount.textContent = `${pages} ${pages === 1 ? 'page' : 'pages'}${pages > 2 ? ' · aim for 1–2' : ''}`;
     els.pageCount.classList.toggle('page-count--warn', pages > 2);
   }
@@ -1221,8 +1336,12 @@
     } else {
       window.addEventListener('resize', updatePageLayout);
     }
-    // Web fonts change text height once they arrive.
-    if (document.fonts) document.fonts.ready.then(updatePageLayout);
+    // Web fonts change line wrapping and height when they arrive — including fonts that
+    // only download later (the classic template's serif loads on first use).
+    if (document.fonts) {
+      document.fonts.ready.then(updatePageLayout);
+      document.fonts.addEventListener('loadingdone', updatePageLayout);
+    }
   }
 
   /* ==========================================================================
@@ -1308,6 +1427,14 @@
     els.dataBtn.focus();
   }
 
+  /**
+   * Keyboard focus left the menu (Tab / Shift+Tab): close it.
+   * relatedTarget is null for mouse clicks in Safari, which handleOutsideClick covers.
+   */
+  function handleMenuFocusOut(event) {
+    if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) toggleDataMenu(false);
+  }
+
   /** Clicking outside an open menu closes it. */
   function handleOutsideClick(event) {
     if (!els.dataMenu.hidden && !event.target.closest('.menu')) toggleDataMenu(false);
@@ -1319,9 +1446,12 @@
     return confirmAction({ title, message, confirmLabel });
   }
 
-  /** data → load example */
-  async function loadSample() {
-    closeDataMenuAndFocus();
+  /**
+   * Load the example resume.
+   * @param {'menu'|'preview'} source where it was started from (decides where focus goes)
+   */
+  async function loadSample(source) {
+    if (source === 'menu') closeDataMenuAndFocus();
     const ok = await confirmReplace(
       'Load the example?',
       'This replaces everything you have entered with a sample resume. Export a .json backup first if you want to keep it.',
@@ -1329,6 +1459,7 @@
     );
     if (!ok) return;
     setResume(sampleResume());
+    if (source === 'preview') els.resume.focus(); // the button that was clicked is gone now
     showToast('Example loaded — edit it to make it yours');
   }
 
@@ -1628,6 +1759,7 @@
     window.addEventListener('beforeprint', handleBeforePrint);
     window.addEventListener('afterprint', handleAfterPrint);
     window.addEventListener('pagehide', flushPendingSave);
+    window.addEventListener('storage', handleStorageChange);
   }
 
   /** Help + theme buttons. */
@@ -1642,7 +1774,9 @@
     els.tabPreview.addEventListener('click', () => selectTab('preview'));
     [els.tabEdit, els.tabPreview].forEach((tab) => tab.addEventListener('keydown', handleTabKeys));
     els.dataBtn.addEventListener('click', () => toggleDataMenu(els.dataMenu.hidden));
-    els.sampleBtn.addEventListener('click', loadSample);
+    els.sampleBtn.addEventListener('click', () => loadSample('menu'));
+    els.dataBtn.parentElement.addEventListener('focusout', handleMenuFocusOut);
+    els.zoomBtn.addEventListener('click', toggleZoom);
     els.importBtn.addEventListener('click', startImport);
     els.importInput.addEventListener('change', handleImportFile);
     els.exportBtn.addEventListener('click', exportJson);
@@ -1657,7 +1791,7 @@
     els.form.addEventListener('click', handleFormClick);
     els.form.addEventListener('toggle', handleEntryToggle, true);
     els.resume.addEventListener('click', (event) => {
-      if (event.target.closest('[data-sample]')) loadSample();
+      if (event.target.closest('[data-sample]')) loadSample('preview');
     });
   }
 
